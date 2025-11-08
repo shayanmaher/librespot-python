@@ -55,8 +55,6 @@ from librespot.proto import ClientToken_pb2 as ClientToken
 from librespot.proto import Connect_pb2 as Connect
 from librespot.proto import Connectivity_pb2 as Connectivity
 from librespot.proto import Keyexchange_pb2 as Keyexchange
-from google.protobuf.message import DecodeError
-
 from librespot.proto import Metadata_pb2 as Metadata
 from librespot.proto import Playlist4External_pb2 as Playlist4External
 from librespot.proto.ExplicitContentPubsub_pb2 import UserAttributesUpdate
@@ -192,167 +190,91 @@ class ApiClient(Closeable):
             self.logger.warning("PUT state returned {}. headers: {}".format(
                 response.status_code, response.headers))
 
-    @staticmethod
-    def __normalize_spotify_uri(
-            uri_like: typing.Union[str, typing.Any]) -> str:
-        if isinstance(uri_like, str):
-            return uri_like
-        to_uri = getattr(uri_like, "to_spotify_uri", None)
-        if callable(to_uri):
-            return to_uri()
-        raise TypeError("Expected a Spotify URI-compatible value, got {}".format(
-            type(uri_like)))
+    def get_metadata_4_track(self, track: TrackId) -> Metadata.Track:
+        """
 
-    @staticmethod
-    def __extract_extended_metadata(
-            payload: typing.Any,
-            proto_cls: typing.Type[typing.Any],
-    ) -> typing.Any:
-        def _decode(value: typing.Any):
-            if isinstance(value, str):
-                try:
-                    decoded = base64.b64decode(value, validate=True)
-                except (binascii.Error, ValueError):
-                    return None
-                message = proto_cls()
-                try:
-                    message.ParseFromString(decoded)
-                except DecodeError:
-                    return None
-                if message.ByteSize() == 0 or not message.ListFields():
-                    return None
-                return message
-            if isinstance(value, dict):
-                for nested in value.values():
-                    result = _decode(nested)
-                    if result is not None:
-                        return result
-            elif isinstance(value, list):
-                for nested in value:
-                    result = _decode(nested)
-                    if result is not None:
-                        return result
-            return None
+        :param track: TrackId:
 
-        return _decode(payload)
-
-    def __get_extended_metadata(
-            self,
-            uri_like: typing.Union[str, typing.Any],
-            proto_cls: typing.Type[typing.Any],
-    ) -> typing.Any:
-        uri = ApiClient.__normalize_spotify_uri(uri_like)
-        headers = CaseInsensitiveDict({
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        })
-        body = json.dumps({"entityRequests": [{"uri": uri}]}).encode("utf-8")
-        response = self.sendToUrl(
-            "POST",
-            "https://spclient.wg.spotify.com",
-            "/extended-metadata/v0/extended-metadata",
-            headers,
-            body,
-        )
-        ApiClient.StatusCodeException.check_status(response)
-        try:
-            payload = response.json()
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                "Failed to decode extended metadata response for {}".format(
-                    uri)) from exc
-        proto = ApiClient.__extract_extended_metadata(payload, proto_cls)
-        if proto is None:
-            raise RuntimeError(
-                "No metadata found in extended metadata response for {}".format(
-                    uri))
-        return proto
-
-    def __get_legacy_metadata(
-            self,
-            uri: str,
-            proto_cls: typing.Type[typing.Any],
-    ) -> typing.Any:
-        if proto_cls is Metadata.Track:
-            identifier = TrackId.from_uri(uri)
-            suffix = "/metadata/4/track/{}".format(identifier.hex_id())
-        elif proto_cls is Metadata.Episode:
-            identifier = EpisodeId.from_uri(uri)
-            suffix = "/metadata/4/episode/{}".format(identifier.hex_id())
-        elif proto_cls is Metadata.Album:
-            identifier = AlbumId.from_uri(uri)
-            suffix = "/metadata/4/album/{}".format(identifier.hex_id())
-        elif proto_cls is Metadata.Artist:
-            identifier = ArtistId.from_uri(uri)
-            suffix = "/metadata/4/artist/{}".format(identifier.hex_id())
-        elif proto_cls is Metadata.Show:
-            identifier = ShowId.from_uri(uri)
-            suffix = "/metadata/4/show/{}".format(identifier.hex_id())
-        else:
-            raise TypeError("Unsupported legacy metadata proto: {}".format(
-                proto_cls))
-
-        response = self.sendToUrl(
-            "GET", "https://spclient.wg.spotify.com", suffix, None, None)
+        """
+        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
+                             "/metadata/4/track/{}".format(track.hex_id()),
+                             None, None)
         ApiClient.StatusCodeException.check_status(response)
         body = response.content
         if body is None:
-            raise RuntimeError(
-                "No metadata body returned from legacy endpoint for {}".format(
-                    uri))
-        proto = proto_cls()
+            raise RuntimeError()
+        proto = Metadata.Track()
         proto.ParseFromString(body)
         return proto
 
-    def __get_metadata_with_fallback(
-            self,
-            uri_like: typing.Union[str, typing.Any],
-            proto_cls: typing.Type[typing.Any],
-    ) -> typing.Any:
-        uri = ApiClient.__normalize_spotify_uri(uri_like)
-        try:
-            return self.__get_extended_metadata(uri, proto_cls)
-        except ApiClient.StatusCodeException as exc:
-            if exc.code != 400:
-                raise
-            self.logger.debug(
-                "Extended metadata request for %s returned %s; falling back to"
-                " legacy endpoint.", uri, exc.code)
-        except RuntimeError as exc:
-            self.logger.debug(
-                "Extended metadata response for %s could not be decoded (%s);"
-                " falling back to legacy endpoint.", uri, exc)
-        return self.__get_legacy_metadata(uri, proto_cls)
+    def get_metadata_4_episode(self, episode: EpisodeId) -> Metadata.Episode:
+        """
 
-    def get_metadata_4_track(
-            self, track: typing.Union[str, TrackId]) -> Metadata.Track:
-        """Retrieve track metadata preferring the extended metadata endpoint."""
+        :param episode: EpisodeId:
 
-        return self.__get_metadata_with_fallback(track, Metadata.Track)
+        """
+        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
+                             "/metadata/4/episode/{}".format(episode.hex_id()),
+                             None, None)
+        ApiClient.StatusCodeException.check_status(response)
+        body = response.content
+        if body is None:
+            raise IOError()
+        proto = Metadata.Episode()
+        proto.ParseFromString(body)
+        return proto
 
-    def get_metadata_4_episode(
-            self, episode: typing.Union[str, EpisodeId]) -> Metadata.Episode:
-        """Retrieve episode metadata preferring the extended metadata endpoint."""
+    def get_metadata_4_album(self, album: AlbumId) -> Metadata.Album:
+        """
 
-        return self.__get_metadata_with_fallback(episode, Metadata.Episode)
+        :param album: AlbumId:
 
-    def get_metadata_4_album(
-            self, album: typing.Union[str, AlbumId]) -> Metadata.Album:
-        """Retrieve album metadata preferring the extended metadata endpoint."""
+        """
+        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
+                             "/metadata/4/album/{}".format(album.hex_id()),
+                             None, None)
+        ApiClient.StatusCodeException.check_status(response)
 
-        return self.__get_metadata_with_fallback(album, Metadata.Album)
+        body = response.content
+        if body is None:
+            raise IOError()
+        proto = Metadata.Album()
+        proto.ParseFromString(body)
+        return proto
 
-    def get_metadata_4_artist(
-            self, artist: typing.Union[str, ArtistId]) -> Metadata.Artist:
-        """Retrieve artist metadata preferring the extended metadata endpoint."""
+    def get_metadata_4_artist(self, artist: ArtistId) -> Metadata.Artist:
+        """
 
-        return self.__get_metadata_with_fallback(artist, Metadata.Artist)
+        :param artist: ArtistId:
 
-    def get_metadata_4_show(
-            self, show: typing.Union[str, ShowId]) -> Metadata.Show:
-        """Retrieve show metadata preferring the extended metadata endpoint."""
+        """
+        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
+                             "/metadata/4/artist/{}".format(artist.hex_id()),
+                             None, None)
+        ApiClient.StatusCodeException.check_status(response)
+        body = response.content
+        if body is None:
+            raise IOError()
+        proto = Metadata.Artist()
+        proto.ParseFromString(body)
+        return proto
 
-        return self.__get_metadata_with_fallback(show, Metadata.Show)
+    def get_metadata_4_show(self, show: ShowId) -> Metadata.Show:
+        """
+
+        :param show: ShowId:
+
+        """
+        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
+                             "/metadata/4/show/{}".format(show.hex_id()), None,
+                             None)
+        ApiClient.StatusCodeException.check_status(response)
+        body = response.content
+        if body is None:
+            raise IOError()
+        proto = Metadata.Show()
+        proto.ParseFromString(body)
+        return proto
 
     def get_playlist(self,
                      _id: PlaylistId) -> Playlist4External.SelectedListContent:
