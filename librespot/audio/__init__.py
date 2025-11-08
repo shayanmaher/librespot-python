@@ -769,7 +769,8 @@ class PlayableContentFeeder:
     def load_episode(self, episode_id: EpisodeId,
                      audio_quality_picker: AudioQualityPicker, preload: bool,
                      halt_listener: HaltListener) -> LoadedStream:
-        episode = self.__session.api().get_metadata_4_episode(episode_id)
+        episode = self.__session.api().get_metadata_4_episode(
+            episode_id.to_spotify_uri())
         if episode.external_url:
             return CdnFeedHelper.load_episode_external(self.__session, episode,
                                                        halt_listener)
@@ -786,7 +787,7 @@ class PlayableContentFeeder:
                    halt_listener: HaltListener):
         if type(track_id_or_track) is TrackId:
             original = self.__session.api().get_metadata_4_track(
-                track_id_or_track)
+                track_id_or_track.to_spotify_uri())
             track = self.pick_alternative_if_necessary(original)
             if track is None:
                 raise RuntimeError("Cannot get alternative track")
