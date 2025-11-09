@@ -56,6 +56,8 @@ from librespot.proto import Connect_pb2 as Connect
 from librespot.proto import Connectivity_pb2 as Connectivity
 from librespot.proto import Keyexchange_pb2 as Keyexchange
 from librespot.proto import Metadata_pb2 as Metadata
+from librespot.proto import extended_metadata_pb2 as ExtendedMetadata
+from librespot.proto import extension_kind_pb2 as ExtensionKind
 from librespot.proto import Playlist4External_pb2 as Playlist4External
 from librespot.proto.ExplicitContentPubsub_pb2 import UserAttributesUpdate
 from librespot.proto.spotify.login5.v3 import Login5_pb2 as Login5
@@ -190,91 +192,76 @@ class ApiClient(Closeable):
             self.logger.warning("PUT state returned {}. headers: {}".format(
                 response.status_code, response.headers))
 
-    def get_metadata_4_track(self, track: TrackId) -> Metadata.Track:
-        """
+    def __fetch_extended_metadata(self, uri: str, extension_kind: int) -> bytes:
+        request = ExtendedMetadata.BatchedEntityRequest()
+        entity_request = request.entity_request.add()
+        entity_request.entity_uri = uri
+        entity_request.query.add().extension_kind = extension_kind
 
-        :param track: TrackId:
-
-        """
-        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
-                             "/metadata/4/track/{}".format(track.hex_id()),
-                             None, None)
+        response = self.sendToUrl(
+            "POST",
+            "https://spclient.wg.spotify.com",
+            "/extended-metadata/v0/extended-metadata",
+            CaseInsensitiveDict(
+                {
+                    "Content-Type": "application/x-protobuf",
+                    "Accept": "application/x-protobuf",
+                }
+            ),
+            request.SerializeToString(),
+        )
         ApiClient.StatusCodeException.check_status(response)
         body = response.content
         if body is None:
-            raise RuntimeError()
-        proto = Metadata.Track()
+            raise RuntimeError("No metadata returned for uri {}".format(uri))
+
+        batched_response = ExtendedMetadata.BatchedExtensionResponse()
+        batched_response.ParseFromString(body)
+
+        for metadata in batched_response.extended_metadata:
+            for extension in metadata.extension_data:
+                if (
+                    extension.extension_kind == extension_kind
+                    and extension.HasField("extension_data")
+                ):
+                    value = extension.extension_data.value
+                    if value:
+                        return value
+
+        raise RuntimeError(
+            "Extended metadata entity missing for uri {}".format(uri)
+        )
+
+    def __parse_extended_metadata(self, uri: str, proto_cls, extension_kind: int):
+        body = self.__fetch_extended_metadata(uri, extension_kind)
+        proto = proto_cls()
         proto.ParseFromString(body)
         return proto
+
+    def get_metadata_4_track(self, track: TrackId) -> Metadata.Track:
+        return self.__parse_extended_metadata(
+            track.to_spotify_uri(), Metadata.Track, ExtensionKind.TRACK_V4
+        )
 
     def get_metadata_4_episode(self, episode: EpisodeId) -> Metadata.Episode:
-        """
-
-        :param episode: EpisodeId:
-
-        """
-        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
-                             "/metadata/4/episode/{}".format(episode.hex_id()),
-                             None, None)
-        ApiClient.StatusCodeException.check_status(response)
-        body = response.content
-        if body is None:
-            raise IOError()
-        proto = Metadata.Episode()
-        proto.ParseFromString(body)
-        return proto
+        return self.__parse_extended_metadata(
+            episode.to_spotify_uri(), Metadata.Episode, ExtensionKind.EPISODE_V4
+        )
 
     def get_metadata_4_album(self, album: AlbumId) -> Metadata.Album:
-        """
-
-        :param album: AlbumId:
-
-        """
-        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
-                             "/metadata/4/album/{}".format(album.hex_id()),
-                             None, None)
-        ApiClient.StatusCodeException.check_status(response)
-
-        body = response.content
-        if body is None:
-            raise IOError()
-        proto = Metadata.Album()
-        proto.ParseFromString(body)
-        return proto
+        return self.__parse_extended_metadata(
+            album.to_spotify_uri(), Metadata.Album, ExtensionKind.ALBUM_V4
+        )
 
     def get_metadata_4_artist(self, artist: ArtistId) -> Metadata.Artist:
-        """
-
-        :param artist: ArtistId:
-
-        """
-        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
-                             "/metadata/4/artist/{}".format(artist.hex_id()),
-                             None, None)
-        ApiClient.StatusCodeException.check_status(response)
-        body = response.content
-        if body is None:
-            raise IOError()
-        proto = Metadata.Artist()
-        proto.ParseFromString(body)
-        return proto
+        return self.__parse_extended_metadata(
+            artist.to_spotify_uri(), Metadata.Artist, ExtensionKind.ARTIST_V4
+        )
 
     def get_metadata_4_show(self, show: ShowId) -> Metadata.Show:
-        """
-
-        :param show: ShowId:
-
-        """
-        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
-                             "/metadata/4/show/{}".format(show.hex_id()), None,
-                             None)
-        ApiClient.StatusCodeException.check_status(response)
-        body = response.content
-        if body is None:
-            raise IOError()
-        proto = Metadata.Show()
-        proto.ParseFromString(body)
-        return proto
+        return self.__parse_extended_metadata(
+            show.to_spotify_uri(), Metadata.Show, ExtensionKind.SHOW_V4
+        )
 
     def get_playlist(self,
                      _id: PlaylistId) -> Playlist4External.SelectedListContent:
