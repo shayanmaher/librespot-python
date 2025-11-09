@@ -190,72 +190,91 @@ class ApiClient(Closeable):
             self.logger.warning("PUT state returned {}. headers: {}".format(
                 response.status_code, response.headers))
 
-    def __fetch_extended_metadata(self, uri: str) -> bytes:
-        response = self.sendToUrl(
-            "POST",
-            "https://spclient.wg.spotify.com",
-            "/extended-metadata/v0/extended-metadata",
-            CaseInsensitiveDict(
-                {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                }
-            ),
-            json.dumps({"identifiers": [{"uri": uri}]}).encode("utf-8"),
-        )
-        ApiClient.StatusCodeException.check_status(response)
-        payload = response.json()
-        metadata_items = []
-        if isinstance(payload, dict):
-            metadata_items = payload.get("metadata") or []
-        if not metadata_items:
-            raise RuntimeError("No metadata returned for uri {}".format(uri))
-        entity_b64 = None
-        for item in metadata_items:
-            if not isinstance(item, dict):
-                continue
-            if item.get("uri") and item.get("uri") != uri:
-                continue
-            candidate = (
-                item.get("metadata")
-                if isinstance(item.get("metadata"), dict)
-                else item
-            )
-            if isinstance(candidate, dict):
-                entity_b64 = candidate.get("entity")
-                if entity_b64 is None and isinstance(candidate.get("metadata"), dict):
-                    entity_b64 = candidate["metadata"].get("entity")
-            if entity_b64:
-                break
-        if not isinstance(entity_b64, str):
-            raise RuntimeError("Extended metadata entity missing for uri {}".format(uri))
-        try:
-            return base64.b64decode(entity_b64)
-        except binascii.Error as exc:
-            raise RuntimeError("Invalid extended metadata payload") from exc
+    def get_metadata_4_track(self, track: TrackId) -> Metadata.Track:
+        """
 
-    def __parse_extended_metadata(self, uri: str, proto_cls):
-        body = self.__fetch_extended_metadata(uri)
-        proto = proto_cls()
+        :param track: TrackId:
+
+        """
+        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
+                             "/metadata/4/track/{}".format(track.hex_id()),
+                             None, None)
+        ApiClient.StatusCodeException.check_status(response)
+        body = response.content
+        if body is None:
+            raise RuntimeError()
+        proto = Metadata.Track()
         proto.ParseFromString(body)
         return proto
 
-    def get_metadata_4_track(self, track: TrackId) -> Metadata.Track:
-        return self.__parse_extended_metadata(track.to_spotify_uri(), Metadata.Track)
-
     def get_metadata_4_episode(self, episode: EpisodeId) -> Metadata.Episode:
-        return self.__parse_extended_metadata(
-            episode.to_spotify_uri(), Metadata.Episode
-        )
+        """
+
+        :param episode: EpisodeId:
+
+        """
+        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
+                             "/metadata/4/episode/{}".format(episode.hex_id()),
+                             None, None)
+        ApiClient.StatusCodeException.check_status(response)
+        body = response.content
+        if body is None:
+            raise IOError()
+        proto = Metadata.Episode()
+        proto.ParseFromString(body)
+        return proto
 
     def get_metadata_4_album(self, album: AlbumId) -> Metadata.Album:
-        return self.__parse_extended_metadata(album.to_spotify_uri(), Metadata.Album)
+        """
+
+        :param album: AlbumId:
+
+        """
+        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
+                             "/metadata/4/album/{}".format(album.hex_id()),
+                             None, None)
+        ApiClient.StatusCodeException.check_status(response)
+
+        body = response.content
+        if body is None:
+            raise IOError()
+        proto = Metadata.Album()
+        proto.ParseFromString(body)
+        return proto
 
     def get_metadata_4_artist(self, artist: ArtistId) -> Metadata.Artist:
-        return self.__parse_extended_metadata(artist.to_spotify_uri(), Metadata.Artist)
+        """
+
+        :param artist: ArtistId:
+
+        """
+        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
+                             "/metadata/4/artist/{}".format(artist.hex_id()),
+                             None, None)
+        ApiClient.StatusCodeException.check_status(response)
+        body = response.content
+        if body is None:
+            raise IOError()
+        proto = Metadata.Artist()
+        proto.ParseFromString(body)
+        return proto
 
     def get_metadata_4_show(self, show: ShowId) -> Metadata.Show:
-        return self.__parse_extended_metadata(show.to_spotify_uri(), Metadata.Show)
+        """
+
+        :param show: ShowId:
+
+        """
+        response = self.sendToUrl("GET", "https://spclient.wg.spotify.com",
+                             "/metadata/4/show/{}".format(show.hex_id()), None,
+                             None)
+        ApiClient.StatusCodeException.check_status(response)
+        body = response.content
+        if body is None:
+            raise IOError()
+        proto = Metadata.Show()
+        proto.ParseFromString(body)
+        return proto
 
     def get_playlist(self,
                      _id: PlaylistId) -> Playlist4External.SelectedListContent:
