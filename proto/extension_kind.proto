@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package spotify.extendedmetadata;
+
+enum ExtensionKind {
+  EXTENSION_KIND_UNSPECIFIED = 0;
+  TRACK_V4 = 1;
+  ALBUM_V4 = 2;
+  ARTIST_V4 = 3;
+  SHOW_V4 = 4;
+  EPISODE_V4 = 5;
+}

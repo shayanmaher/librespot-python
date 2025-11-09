@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package spotify.extendedmetadata;
+
+import "extension_kind.proto";
+
+message BatchedEntityRequest {
+  repeated EntityRequest entity_request = 1;
+}
+
+message EntityRequest {
+  string entity_uri = 1;
+  repeated ExtensionQuery query = 2;
+}
+
+message ExtensionQuery {
+  ExtensionKind extension_kind = 1;
+}
+
+message BatchedExtensionResponse {
+  repeated ExtendedMetadata extended_metadata = 1;
+}
+
+message ExtendedMetadata {
+  string entity_uri = 1;
+  repeated ExtensionDataContainer extension_data = 2;
+}
+
+message ExtensionDataContainer {
+  ExtensionKind extension_kind = 1;
+  ExtensionData extension_data = 2;
+}
+
+message ExtensionData {
+  bytes value = 1;
+}
